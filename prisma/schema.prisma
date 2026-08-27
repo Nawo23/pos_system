@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+}
+
+model User {
+  id        String   @id @default(uuid())
+  authId    String   @unique // maps to Supabase auth.users.id
+  name      String
+  role      Role     @default(CASHIER)
+  createdAt DateTime @default(now())
+  sales     Sale[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Supplier {
+  id            String          @id @default(cuid())
+  name          String
+  phone         String?
+  address       String?
+  stockMovements StockMovement[]
+  grns           Grn[]
+}
+model Grn {
+  id         String    @id @default(cuid())
+  grnNo      String    @unique
+  supplierId String
+  supplier   Supplier  @relation(fields: [supplierId], references: [id])
+  note       String?
+  createdAt  DateTime  @default(now())
+  items      GrnItem[]
+}
+
+model GrnItem {
+  id        String  @id @default(cuid())
+  grnId     String
+  grn       Grn     @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  qty       Int
+  unitCost  Decimal @db.Decimal(10, 2)
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  sku         String   @unique
+  barcode     String?  @unique
+  name        String
+  brand       String?
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+  unit        String   @default("pcs") // pcs, meter, box
+  costPrice   Decimal  @db.Decimal(10, 2)
+  sellPrice   Decimal  @db.Decimal(10, 2)
+  stockQty    Int      @default(0)
+  imageUrl    String?
+  inStock     Boolean  @default(true)
+  lowStockAt  Int      @default(5)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  saleItems      SaleItem[]
+  stockMovements StockMovement[]
+  grnItems       GrnItem[]
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String?  @unique
+  isRegular    Boolean  @default(false)
+  discountRate Decimal  @default(0) @db.Decimal(5, 2) // % e.g. 5.00 = 5%
+  sales        Sale[]
+}
+
+model Sale {
+  id            String        @id @default(cuid())
+  invoiceNo     String        @unique
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+  paymentMethod PaymentMethod @default(CASH)
+  createdAt     DateTime      @default(now())
+
+  items SaleItem[]
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  qty       Int
+  unitPrice Decimal @db.Decimal(10, 2)
+  lineTotal Decimal @db.Decimal(10, 2)
+}
+
+enum MovementType {
+  STOCK_IN
+  SALE
+  ADJUSTMENT
+}
+
+model StockMovement {
+  id         String       @id @default(cuid())
+  productId  String
+  product    Product      @relation(fields: [productId], references: [id])
+  type       MovementType
+  qtyChange  Int // positive for stock in, negative for sale/out
+  supplierId String?
+  supplier   Supplier?    @relation(fields: [supplierId], references: [id])
+  note       String?
+  createdAt  DateTime     @default(now())
+}
