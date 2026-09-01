@@ -97,13 +97,21 @@ export default function PosClient({ initialProducts, categories }: { initialProd
         setCart((prev) => prev.filter((c) => c.id !== id));
     }
 
+    const subtotal = cart.reduce((s, c) => s + c.qty * c.sellPrice, 0);
+    const total = Math.max(0, subtotal - discount);
+
+    const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
+    const [paidAmountInput, setPaidAmountInput] = useState('');
+
+    const paidAmountNum = paidAmountInput !== '' ? Number(paidAmountInput) : total;
+    const changeDue = paidAmountNum - total;
+
     function clearCart() {
         setCart([]);
         setDiscount(0);
+        setPaidAmountInput('');
+        setPaymentMethod('CASH');
     }
-
-    const subtotal = cart.reduce((s, c) => s + c.qty * c.sellPrice, 0);
-    const total = Math.max(0, subtotal - discount);
 
     async function handlePhoneFind() {
         if (phone.length < 9) return;
@@ -129,8 +137,6 @@ export default function PosClient({ initialProducts, categories }: { initialProd
         setNewCustomerName('');
     }
 
-
-
     async function handleCheckout() {
         if (cart.length === 0) return;
         setProcessing(true);
@@ -138,8 +144,10 @@ export default function PosClient({ initialProducts, categories }: { initialProd
             const sale = await checkout(
                 cart.map((c) => ({ productId: c.id, qty: c.qty, unitPrice: c.sellPrice })),
                 discount,
-                'CASH',
-                matchedCustomer?.id
+                paymentMethod,
+                matchedCustomer?.id,
+                paidAmountNum,
+                changeDue
             );
             clearCart();
             resetCustomer();
@@ -294,30 +302,111 @@ export default function PosClient({ initialProducts, categories }: { initialProd
                     </div>
                 )}
 
-                <div className="mt-6 border-t border-[#22242a] pt-4">
-                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Discount</h2>
+                <div className="mt-4 border-t border-[#22242a] pt-3">
+                    <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Discount</h2>
                     <input
                         type="number"
-                        value={discount}
+                        value={discount || ''}
                         onChange={(e) => setDiscount(Number(e.target.value))}
-                        className="w-full rounded-lg bg-[#16171a] border border-[#22242a] px-3 py-2 text-sm outline-none focus:border-blue-500"
+                        className="w-full rounded-lg bg-[#16171a] border border-[#22242a] px-3 py-1.5 text-sm outline-none focus:border-blue-500"
                         placeholder="0.00"
                     />
                 </div>
 
-                <div className="mt-auto space-y-2 border-t border-[#22242a] pt-4">
-                    <div className="flex justify-between text-sm text-neutral-400"><span>Subtotal</span><span>Rs {subtotal.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-sm text-neutral-400"><span>Discount</span><span>- Rs {discount.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-xl font-bold"><span>Total</span><span style={{ color: '#60a5fa' }}>Rs {total.toFixed(2)}</span></div>
+                <div className="mt-4 border-t border-[#22242a] pt-3">
+                    <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">Payment Method</h2>
+                    <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                            { id: 'CASH', label: '💵 Cash' },
+                            { id: 'CARD', label: '💳 Card' },
+                            { id: 'BANK_TRANSFER', label: '🏦 Transfer' },
+                        ].map((pm) => (
+                            <button
+                                key={pm.id}
+                                type="button"
+                                onClick={() => setPaymentMethod(pm.id as any)}
+                                className={`rounded-lg py-1.5 text-xs font-medium border transition-all ${
+                                    paymentMethod === pm.id
+                                        ? 'bg-blue-600/20 border-blue-500 text-blue-300 font-semibold'
+                                        : 'bg-[#16171a] border-[#22242a] text-neutral-400 hover:text-white'
+                                }`}
+                            >
+                                {pm.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="mt-3 border-t border-[#22242a] pt-3">
+                    <div className="mb-1.5 flex items-center justify-between">
+                        <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">Customer Paid</h2>
+                        <div className="flex gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setPaidAmountInput(total.toString())}
+                                className="rounded bg-[#22242a] px-1.5 py-0.5 text-[10px] text-blue-400 hover:bg-[#2a2c33]"
+                            >
+                                Exact
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPaidAmountInput((prev) => (Number(prev || 0) + 500).toString())}
+                                className="rounded bg-[#22242a] px-1.5 py-0.5 text-[10px] text-neutral-300 hover:bg-[#2a2c33]"
+                            >
+                                +500
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPaidAmountInput((prev) => (Number(prev || 0) + 1000).toString())}
+                                className="rounded bg-[#22242a] px-1.5 py-0.5 text-[10px] text-neutral-300 hover:bg-[#2a2c33]"
+                            >
+                                +1000
+                            </button>
+                        </div>
+                    </div>
+                    <input
+                        type="number"
+                        value={paidAmountInput}
+                        onChange={(e) => setPaidAmountInput(e.target.value)}
+                        className="w-full rounded-lg bg-[#16171a] border border-[#22242a] px-3 py-1.5 text-sm outline-none focus:border-blue-500"
+                        placeholder={`Exact total (Rs ${total.toFixed(2)})`}
+                    />
+                </div>
+
+                <div className="mt-auto space-y-2 border-t border-[#22242a] pt-3">
+                    <div className="flex justify-between text-xs text-neutral-400"><span>Subtotal</span><span>Rs {subtotal.toFixed(2)}</span></div>
+                    {discount > 0 && (
+                        <div className="flex justify-between text-xs text-neutral-400"><span>Discount</span><span>- Rs {discount.toFixed(2)}</span></div>
+                    )}
+                    <div className="flex justify-between text-lg font-bold"><span>Total</span><span style={{ color: '#60a5fa' }}>Rs {total.toFixed(2)}</span></div>
+
+                    <div className="flex justify-between text-xs text-neutral-300 border-t border-[#22242a]/60 pt-1.5">
+                        <span>Paid Amount</span>
+                        <span className="font-semibold">Rs {paidAmountNum.toFixed(2)}</span>
+                    </div>
+
+                    {paidAmountInput !== '' && (
+                        changeDue >= 0 ? (
+                            <div className="flex justify-between text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
+                                <span>Change Due:</span>
+                                <span>Rs {changeDue.toFixed(2)}</span>
+                            </div>
+                        ) : (
+                            <div className="flex justify-between text-xs font-semibold text-red-400 bg-red-500/10 px-2 py-1 rounded">
+                                <span>Remaining Balance:</span>
+                                <span>Rs {Math.abs(changeDue).toFixed(2)}</span>
+                            </div>
+                        )
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 pt-2">
-                        <button onClick={clearCart} className="rounded-lg bg-[#22242a] py-3 text-sm font-medium hover:bg-[#2a2c33]">
+                        <button onClick={clearCart} className="rounded-lg bg-[#22242a] py-2.5 text-sm font-medium hover:bg-[#2a2c33]">
                             Clear
                         </button>
                         <button
                             onClick={handleCheckout}
                             disabled={cart.length === 0 || processing}
-                            className="rounded-lg py-3 text-sm font-semibold text-white disabled:opacity-40"
+                            className="rounded-lg py-2.5 text-sm font-semibold text-white disabled:opacity-40"
                             style={{ background: 'linear-gradient(135deg, #60a5fa, #2563eb)', boxShadow: cart.length ? '0 0 16px 0 rgba(59,130,246,0.4)' : 'none' }}
                         >
                             {processing ? 'Processing...' : 'Pay / Print'}

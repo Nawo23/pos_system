@@ -12,7 +12,7 @@ export default function InventoryClient({ initialProducts, categories }: { initi
     const [products, setProducts] = useState(initialProducts);
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState({
-        sku: '', name: '', brand: '', categoryId: categories[0]?.id ?? '',
+        sku: '', name: '', brand: '', categoryId: categories[0]?.id ?? '', vehicleType: 'UNIVERSAL',
         unit: 'pcs', costPrice: 0, sellPrice: 0, stockQty: 0, lowStockAt: 5,
     });
 

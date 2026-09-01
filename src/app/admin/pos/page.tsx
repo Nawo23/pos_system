@@ -4,10 +4,12 @@ import { getProducts, getCategories } from '@/app/actions/products';
 import PosClient from './PosClient';
 
 export default async function PosPage() {
-    const user = await getCurrentUser();
+    const [user, products, categories] = await Promise.all([
+        getCurrentUser(),
+        getProducts(),
+        getCategories(),
+    ]);
     if (!user) redirect('/login');
-
-    const [products, categories] = await Promise.all([getProducts(), getCategories()]);
 
     return (
         <PosClient

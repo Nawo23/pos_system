@@ -99,8 +99,13 @@ export default function PosClient() {
         setCart((prev) => prev.filter((c) => c.id !== id));
     }
 
+    const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER'>('CASH');
+    const [paidAmountInput, setPaidAmountInput] = useState('');
+
     const subtotal = cart.reduce((s, c) => s + c.qty * c.sellPrice, 0);
-    const total = subtotal - discount;
+    const total = Math.max(0, subtotal - discount);
+    const paidAmountNum = paidAmountInput !== '' ? Number(paidAmountInput) : total;
+    const changeDue = paidAmountNum - total;
 
     async function handlePhoneChange(value: string) {
         setPhone(value);
@@ -122,11 +127,15 @@ export default function PosClient() {
             const sale = await checkout(
                 cart.map((c) => ({ productId: c.id, qty: c.qty, unitPrice: c.sellPrice })),
                 discount,
-                'CASH',
-                matchedCustomer?.id
+                paymentMethod,
+                matchedCustomer?.id,
+                paidAmountNum,
+                changeDue
             );
             setCart([]);
             setDiscount(0);
+            setPaidAmountInput('');
+            setPaymentMethod('CASH');
             setPhone('');
             setMatchedCustomer(null);
             window.open(`/receipt/${sale.id}`, '_blank');
@@ -243,24 +252,89 @@ export default function PosClient() {
                     ))}
                 </div>
 
-                <div className="mt-4 space-y-2 border-t border-neutral-800 pt-4">
+                <div className="mt-4 space-y-2.5 border-t border-neutral-800 pt-3 text-xs">
                     <div className="flex justify-between text-sm"><span>Subtotal</span><span>Rs {subtotal.toFixed(2)}</span></div>
                     <div className="flex items-center justify-between text-sm">
                         <span>Discount</span>
                         <input
                             type="number"
-                            value={discount}
+                            value={discount || ''}
                             onChange={(e) => setDiscount(Number(e.target.value))}
-                            className="w-20 rounded bg-neutral-800 px-2 py-1 text-right"
+                            className="w-24 rounded bg-neutral-800 px-2 py-1 text-right outline-none focus:ring-1 focus:ring-blue-500"
+                            placeholder="0.00"
                         />
                     </div>
-                    <div className="flex justify-between text-lg font-semibold"><span>Total</span><span>Rs {total.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-lg font-semibold text-white"><span>Total</span><span className="text-blue-400">Rs {total.toFixed(2)}</span></div>
+
+                    <div className="pt-2">
+                        <label className="block text-[11px] font-medium text-neutral-400 mb-1">Payment Method</label>
+                        <div className="grid grid-cols-3 gap-1">
+                            {[
+                                { id: 'CASH', label: '💵 Cash' },
+                                { id: 'CARD', label: '💳 Card' },
+                                { id: 'BANK_TRANSFER', label: '🏦 Transfer' },
+                            ].map((pm) => (
+                                <button
+                                    key={pm.id}
+                                    type="button"
+                                    onClick={() => setPaymentMethod(pm.id as any)}
+                                    className={`rounded py-1 text-[11px] font-medium transition-all ${
+                                        paymentMethod === pm.id
+                                            ? 'bg-blue-600 text-white font-semibold'
+                                            : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                                    }`}
+                                >
+                                    {pm.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="pt-1">
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-[11px] font-medium text-neutral-400">Customer Paid</label>
+                            <button
+                                type="button"
+                                onClick={() => setPaidAmountInput(total.toString())}
+                                className="text-[10px] text-blue-400 hover:underline"
+                            >
+                                Exact (Rs {total.toFixed(2)})
+                            </button>
+                        </div>
+                        <input
+                            type="number"
+                            value={paidAmountInput}
+                            onChange={(e) => setPaidAmountInput(e.target.value)}
+                            className="w-full rounded bg-neutral-800 px-3 py-1.5 text-xs text-white outline-none focus:ring-1 focus:ring-blue-500"
+                            placeholder={`Exact (Rs ${total.toFixed(2)})`}
+                        />
+                    </div>
+
+                    <div className="flex justify-between text-xs text-neutral-300 pt-1">
+                        <span>Paid:</span>
+                        <span className="font-semibold">Rs {paidAmountNum.toFixed(2)}</span>
+                    </div>
+
+                    {paidAmountInput !== '' && (
+                        changeDue >= 0 ? (
+                            <div className="flex justify-between text-xs font-semibold text-green-400 bg-green-950/60 px-2 py-1 rounded">
+                                <span>Change Due:</span>
+                                <span>Rs {changeDue.toFixed(2)}</span>
+                            </div>
+                        ) : (
+                            <div className="flex justify-between text-xs font-semibold text-red-400 bg-red-950/60 px-2 py-1 rounded">
+                                <span>Remaining Balance:</span>
+                                <span>Rs {Math.abs(changeDue).toFixed(2)}</span>
+                            </div>
+                        )
+                    )}
+
                     <button
                         onClick={handleCheckout}
                         disabled={cart.length === 0 || processing}
-                        className="w-full rounded bg-blue-600 py-3 font-medium hover:bg-blue-500 disabled:opacity-50"
+                        className="w-full rounded bg-blue-600 py-2.5 font-medium text-sm hover:bg-blue-500 disabled:opacity-50 mt-2"
                     >
-                        {processing ? 'Processing...' : 'Complete Sale'}
+                        {processing ? 'Processing...' : 'Complete Sale & Print'}
                     </button>
                 </div>
             </div>

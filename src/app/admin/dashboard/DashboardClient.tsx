@@ -1,10 +1,21 @@
 'use client';
-import { useState, useTransition } from 'react';
-import { getDashboardReport } from '@/app/actions/dashboard';
+import { useState, useTransition, useMemo } from 'react';
+import { getDashboardReport, getDashboardFilterOptions } from '@/app/actions/dashboard';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Printer, Download, Wallet, Receipt, TrendingUp, Landmark } from 'lucide-react';
+import { Printer, Download, Wallet, Receipt, TrendingUp, Landmark, Filter } from 'lucide-react';
 
 type Report = Awaited<ReturnType<typeof getDashboardReport>>;
+type FilterOptions = Awaited<ReturnType<typeof getDashboardFilterOptions>>;
+
+const VEHICLE_LABELS: Record<string, string> = {
+    CAR: 'Car',
+    BIKE: 'Motorcycle / Bike',
+    THREE_WHEELER: 'Three-Wheeler',
+    VAN: 'Van',
+    TRUCK: 'Truck / Lorry',
+    BUS: 'Bus',
+    UNIVERSAL: 'Universal (Fits All)',
+};
 
 function toDateInputValue(iso: string) {
     return iso.slice(0, 10);
@@ -13,7 +24,13 @@ function toTimeInputValue(iso: string) {
     return new Date(iso).toTimeString().slice(0, 5);
 }
 
-export default function DashboardClient({ initialReport }: { initialReport: Report }) {
+export default function DashboardClient({
+    initialReport,
+    filterOptions,
+}: {
+    initialReport: Report;
+    filterOptions: FilterOptions;
+}) {
     const [report, setReport] = useState(initialReport);
     const [fromDate, setFromDate] = useState(toDateInputValue(initialReport.from));
     const [fromTime, setFromTime] = useState('00:00');
@@ -21,17 +38,62 @@ export default function DashboardClient({ initialReport }: { initialReport: Repo
     const [toTime, setToTime] = useState('23:59');
     const [isPending, startTransition] = useTransition();
 
+    const [vehicleType, setVehicleType] = useState('ALL');
+    const [vehicleBrandId, setVehicleBrandId] = useState('ALL');
+    const [categoryId, setCategoryId] = useState('ALL');
+    const [productId, setProductId] = useState('ALL');
+
+    const availableBrands = useMemo(() => {
+        if (vehicleType === 'ALL') return filterOptions.brands;
+        return filterOptions.brands.filter((b) => b.vehicleType === vehicleType);
+    }, [vehicleType, filterOptions]);
+
+    const availableCategories = useMemo(() => {
+        return filterOptions.categories;
+    }, [filterOptions]);
+
+    const availableProducts = useMemo(() => {
+        return filterOptions.products.filter((p) => {
+            const matchVt = vehicleType === 'ALL' || p.vehicleType === vehicleType;
+            const matchBrand = vehicleBrandId === 'ALL' || p.vehicleBrandId === vehicleBrandId;
+            const matchCat = categoryId === 'ALL' || p.categoryId === categoryId;
+            return matchVt && matchBrand && matchCat;
+        });
+    }, [filterOptions, vehicleType, vehicleBrandId, categoryId]);
+
     function refresh() {
         const fromIso = new Date(`${fromDate}T${fromTime}:00`).toISOString();
         const toIso = new Date(`${toDate}T${toTime}:59`).toISOString();
         startTransition(async () => {
-            const data = await getDashboardReport(fromIso, toIso);
+            const data = await getDashboardReport(fromIso, toIso, {
+                vehicleType,
+                vehicleBrandId,
+                categoryId,
+                productId,
+            });
             setReport(data);
         });
     }
 
     function handlePrintSummary() {
         window.print();
+    }
+
+    function handleVehicleTypeChange(value: string) {
+        setVehicleType(value);
+        setVehicleBrandId('ALL');
+        setCategoryId('ALL');
+        setProductId('ALL');
+    }
+
+    function handleBrandChange(value: string) {
+        setVehicleBrandId(value);
+        setProductId('ALL');
+    }
+
+    function handleCategoryChange(value: string) {
+        setCategoryId(value);
+        setProductId('ALL');
     }
 
     function handleExportCsv() {
@@ -84,7 +146,7 @@ export default function DashboardClient({ initialReport }: { initialReport: Repo
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-wrap items-end gap-3 mb-5">
                     <div>
                         <label className="mb-1 block text-xs text-neutral-500">FROM</label>
                         <div className="flex gap-2">
@@ -106,6 +168,43 @@ export default function DashboardClient({ initialReport }: { initialReport: Repo
                     <button onClick={handlePrintSummary} className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500">
                         <Printer size={16} /> Print Summary
                     </button>
+                </div>
+
+                {/* Filters */}
+                <div className="pt-4 border-t border-neutral-800">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+                        <Filter size={14} /> Filter Analytics
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div>
+                            <label className="mb-1 block text-xs text-neutral-500">VEHICLE TYPE</label>
+                            <select value={vehicleType} onChange={(e) => handleVehicleTypeChange(e.target.value)} className="w-full rounded bg-[#0d0e10] border border-[#22242a] px-3 py-2 text-sm">
+                                <option value="ALL">All Vehicle Types</option>
+                                {filterOptions.vehicleTypes.map((vt: string) => <option key={vt} value={vt}>{VEHICLE_LABELS[vt] ?? vt}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs text-neutral-500">BRAND / MODEL</label>
+                            <select value={vehicleBrandId} onChange={(e) => handleBrandChange(e.target.value)} className="w-full rounded bg-[#0d0e10] border border-[#22242a] px-3 py-2 text-sm">
+                                <option value="ALL">All Brands</option>
+                                {availableBrands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs text-neutral-500">CATEGORY</label>
+                            <select value={categoryId} onChange={(e) => handleCategoryChange(e.target.value)} className="w-full rounded bg-[#0d0e10] border border-[#22242a] px-3 py-2 text-sm">
+                                <option value="ALL">All Categories</option>
+                                {availableCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs text-neutral-500">ITEM</label>
+                            <select value={productId} onChange={(e) => setProductId(e.target.value)} className="w-full rounded bg-[#0d0e10] border border-[#22242a] px-3 py-2 text-sm">
+                                <option value="ALL">All Items</option>
+                                {availableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 

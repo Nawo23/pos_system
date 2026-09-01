@@ -1,6 +1,20 @@
 'use server';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { Prisma } from '@prisma/client';
+
+const VALID_VEHICLE_TYPES = new Set([
+    'CAR', 'BIKE', 'THREE_WHEELER', 'VAN', 'TRUCK', 'BUS', 'UNIVERSAL'
+]);
+
+function sanitizeVehicleType(type?: string): string {
+    if (!type) return 'UNIVERSAL';
+    const upper = type.toUpperCase();
+    if (upper === 'MOTORCYCLE') return 'BIKE';
+    if (upper === 'LORRY') return 'TRUCK';
+    if (VALID_VEHICLE_TYPES.has(upper)) return upper;
+    return 'UNIVERSAL';
+}
 
 function generateBarcodeValue() {
     const ts = Date.now().toString().slice(-10);
@@ -19,23 +33,55 @@ export async function getProductByBarcode(barcode: string) {
     return prisma.product.findUnique({ where: { barcode } });
 }
 
+function handlePrismaError(err: unknown): never {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') {
+            const target = (err.meta?.target as string[]) || [];
+            const targetStr = Array.isArray(target) ? target.join(', ') : String(target);
+            if (targetStr.includes('sku')) {
+                throw new Error('A product with this SKU already exists. Please use a unique SKU.');
+            }
+            if (targetStr.includes('barcode')) {
+                throw new Error('A product with this Barcode already exists. Please use a unique Barcode.');
+            }
+            throw new Error(`A product with this ${targetStr} already exists.`);
+        }
+    }
+    throw err;
+}
+
 export async function createProduct(data: {
     sku: string; name: string; brand?: string; categoryId: string;
+    vehicleType: string; vehicleBrandId?: string;
     unit: string; costPrice: number; sellPrice: number; stockQty: number; lowStockAt: number;
     barcode?: string; imageUrl?: string;
 }) {
-    const barcode = data.barcode?.trim() || generateBarcodeValue();
-    const product = await prisma.product.create({ data: { ...data, barcode } });
-    revalidatePath('/admin/products');
-    return product;
+    try {
+        const barcode = data.barcode?.trim() || generateBarcodeValue();
+        const vehicleType = sanitizeVehicleType(data.vehicleType);
+        const payload = { ...data, barcode, vehicleType, vehicleBrandId: data.vehicleBrandId || null };
+        const product = await prisma.product.create({ data: payload as any });
+        revalidatePath('/admin/products');
+        return product;
+    } catch (err) {
+        handlePrismaError(err);
+    }
 }
 
 export async function updateProduct(id: string, data: Partial<{
-    sku: string; name: string; brand: string; categoryId: string;
-    unit: string; costPrice: number; sellPrice: number; lowStockAt: number; barcode: string; imageUrl: string; inStock: boolean;
+    sku: string; name: string; brand: string; categoryId: string; vehicleType: string; vehicleBrandId: string | null;
+    unit: string; costPrice: number; sellPrice: number; lowStockAt: number; barcode: string; imageUrl: string;
 }>) {
-    await prisma.product.update({ where: { id }, data: data as any });
-    revalidatePath('/admin/products');
+    try {
+        const payload = { ...data };
+        if (payload.vehicleType) {
+            payload.vehicleType = sanitizeVehicleType(payload.vehicleType);
+        }
+        await prisma.product.update({ where: { id }, data: payload as any });
+        revalidatePath('/admin/products');
+    } catch (err) {
+        handlePrismaError(err);
+    }
 }
 
 export async function deleteProduct(id: string) {
